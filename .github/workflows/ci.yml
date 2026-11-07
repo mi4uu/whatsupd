@@ -34,8 +34,8 @@ jobs:
           cd dist/v0.0.0-ci && sha256sum -c SHA256SUMS
       - name: Install the .rpm on Fedora and run it
         run: |
-          docker run --rm -v "$PWD/dist/v0.0.0-ci:/d:ro" fedora:44 sh -ec '
-            rpm -i /d/*.x86_64.rpm
+          docker run --rm -v "$PWD/dist/v0.0.0-ci:/d:ro" fedora:latest sh -ec '
+            dnf -q -y install /d/*.x86_64.rpm
             whatsupd version | grep -q v0.0.0-ci
             test -f /usr/lib/systemd/user/whatsupd.service
             rpm -e whatsupd

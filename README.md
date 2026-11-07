@@ -111,12 +111,12 @@ V=0.1.0
 # Debian, Ubuntu
 curl -fLO https://github.com/mi4uu/whatsupd/releases/download/v$V/whatsupd_${V}_amd64.deb && sudo dpkg -i whatsupd_${V}_amd64.deb
 # Fedora, RHEL
-sudo rpm -i https://github.com/mi4uu/whatsupd/releases/download/v$V/whatsupd-$V-1.x86_64.rpm
+sudo dnf install https://github.com/mi4uu/whatsupd/releases/download/v$V/whatsupd-$V-1.x86_64.rpm
 # Arch
 curl -fLO https://github.com/mi4uu/whatsupd/releases/download/v$V/whatsupd-$V-1-x86_64.pkg.tar.zst && sudo pacman -U whatsupd-$V-1-x86_64.pkg.tar.zst
 ```
 
-On arm64 use `arm64.deb`, `aarch64.rpm` or `aarch64.pkg.tar.zst`. Then, as your own user: `whatsupd serve` once to link WhatsApp, and `systemctl --user enable --now whatsupd` (or `whatsupd service install`) to keep it running.
+On arm64 use `arm64.deb`, `aarch64.rpm` or `aarch64.pkg.tar.zst`. The .rpm is not signed yet: `dnf` installs it, but plain `rpm -i` refuses it on Fedora 45 and newer unless you add `--nosignature`. Then, as your own user: `whatsupd serve` once to link WhatsApp, and `systemctl --user enable --now whatsupd` (or `whatsupd service install`) to keep it running.
 
 ### macOS and other Linux
 
