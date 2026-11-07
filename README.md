@@ -107,7 +107,7 @@ Every [release](https://github.com/mi4uu/whatsupd/releases) has static binaries 
 The packages put the binary in `/usr/bin` and a systemd user unit in place. Replace the version with the latest release:
 
 ```sh
-V=0.2.0
+V=0.1.0
 # Debian, Ubuntu
 curl -fLO https://github.com/mi4uu/whatsupd/releases/download/v$V/whatsupd_${V}_amd64.deb && sudo dpkg -i whatsupd_${V}_amd64.deb
 # Fedora, RHEL
@@ -121,7 +121,7 @@ On arm64 use `arm64.deb`, `aarch64.rpm` or `aarch64.pkg.tar.zst`. Then, as your 
 ### macOS and other Linux
 
 ```sh
-V=v0.2.0
+V=v0.1.0
 P=whatsupd_${V}_darwin_arm64      # or darwin_amd64, linux_amd64, linux_arm64
 curl -fLO https://github.com/mi4uu/whatsupd/releases/download/$V/$P.tar.gz
 curl -fLO https://github.com/mi4uu/whatsupd/releases/download/$V/SHA256SUMS
