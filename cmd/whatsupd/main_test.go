@@ -34,6 +34,23 @@ func TestSendNeedsAllowlistOffLoopback(t *testing.T) {
 	}
 }
 
+func TestEnvBoolUsesPrefix(t *testing.T) {
+	t.Setenv("WHATSUPD_MCP_ALLOW_SEND", "true")
+	t.Setenv("WAMCP_OAUTH", "1")
+	t.Setenv("MCP_ALLOW_SEND", "")
+	if !envBool("MCP_ALLOW_SEND") {
+		t.Fatal("WHATSUPD_MCP_ALLOW_SEND=true must turn sending on")
+	}
+	if !envBool("OAUTH") {
+		t.Fatal("legacy WAMCP_OAUTH=1 must still work")
+	}
+	t.Setenv("WHATSUPD_MCP_ALLOW_SEND", "")
+	t.Setenv("MCP_ALLOW_SEND", "true")
+	if envBool("MCP_ALLOW_SEND") {
+		t.Fatal("an unprefixed MCP_ALLOW_SEND must not turn sending on")
+	}
+}
+
 func TestServiceArgsKeepSendFlags(t *testing.T) {
 	if a := (&sendFlags{}).args(); a != nil {
 		t.Fatalf("switch off must add no flags, got %v", a)

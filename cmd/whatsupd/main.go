@@ -155,9 +155,9 @@ func (l liveAdapter) RequestOlderMessages(ctx context.Context, chat string, coun
 	return l.m.RequestOlderMessages(ctx, chat, count)
 }
 
-// envBool reads a boolean environment variable (1, true, yes, on).
+// envBool reads a boolean WHATSUPD_ variable (1, true, yes, on).
 func envBool(name string) bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+	switch strings.ToLower(strings.TrimSpace(config.Env(name))) {
 	case "1", "true", "yes", "on":
 		return true
 	}
