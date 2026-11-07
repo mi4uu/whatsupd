@@ -72,3 +72,9 @@ jobs:
           for _ in $(seq 30); do test -S "/run/user/$(id -u)/bus" && break; sleep 1; done
           XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user is-system-running --wait || true
       - run: XDG_RUNTIME_DIR="/run/user/$(id -u)" scripts/upgrade-test.sh /tmp/wamcp /tmp/whatsupd
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --build-arg VERSION=v0.0.0-ci -t whatsupd:ci .
+      - run: scripts/docker-test.sh whatsupd:ci

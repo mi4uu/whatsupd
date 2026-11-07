@@ -112,6 +112,28 @@ or clone and `make install` as above (installs to `~/.local/bin`, set `PREFIX` t
 
 macOS and Linux both work.
 
+### Docker
+
+`ghcr.io/mi4uu/whatsupd`, for amd64 and arm64. The image is built `FROM scratch`: the static binary and CA certificates, about 26 MB, running as a non-root user.
+
+```sh
+curl -fLO https://raw.githubusercontent.com/mi4uu/whatsupd/main/compose.yml
+docker compose up -d
+docker compose logs whatsupd                   # QR code: WhatsApp > Linked devices > Link a device
+docker compose exec whatsupd whatsupd open     # sign-in link for the web client
+docker compose exec whatsupd whatsupd config   # MCP token and the `claude mcp add` command
+```
+
+- **Data** lives in the `whatsupd-data` volume. `docker compose down` keeps it; `down -v` deletes the archive and the WhatsApp session.
+- **Sign-in.** The port is published on 127.0.0.1 only, but inside the container whatsupd listens on all interfaces, so it treats itself as exposed. The web client needs a link from `whatsupd open` (valid 5 minutes), and sending needs a recipient allowlist.
+- **Claude Desktop and other stdio clients:** `"command": "docker", "args": ["exec", "-i", "whatsupd", "whatsupd", "mcp"]`.
+- **Sending files by path:** mount a directory and set the three variables commented out in `compose.yml`.
+- **Other settings:** `WHATSUPD_*` variables, or flags with `command: ["serve", "--auto-media"]`.
+- **Update:** `docker compose pull && docker compose up -d`.
+- **Bind mount instead of a volume** (Linux): make the directory writable by uid 65532, or set `user:` in `compose.yml`.
+
+On macOS I recommend [OrbStack](https://orbstack.dev). Docker Desktop works too, but OrbStack is lighter, starts with the system and makes ports and mounts feel native. I'm a big fan of it, huge respect to its author.
+
 ## Upgrading from wamcp
 
 whatsupd was called wamcp until 2026-11-06. Upgrading keeps the WhatsApp session and the whole archive; nothing needs pairing again.

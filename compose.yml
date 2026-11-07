@@ -1,0 +1,25 @@
+services:
+  whatsupd:
+    image: ghcr.io/mi4uu/whatsupd:latest
+    container_name: whatsupd
+    restart: unless-stopped
+    # With a terminal the daemon prints the pairing QR code and a sign-in link
+    # to `docker compose logs`.
+    tty: true
+    # Inside the container whatsupd listens beyond its own loopback, so it
+    # treats itself as exposed: the web client asks for a sign-in link and
+    # sending needs an allowlist. Publish on the host's loopback only.
+    ports:
+      - "127.0.0.1:8765:8765"
+    volumes:
+      - whatsupd-data:/data
+      # For send_file paths, uncomment and set the three variables below.
+      # - ./outbox:/files:ro
+    environment:
+      TZ: ${TZ:-UTC}
+      # WHATSUPD_MCP_ALLOW_SEND: "true"
+      # WHATSUPD_MCP_SEND_TO: "+48600000000"
+      # WHATSUPD_MCP_SEND_FILES_FROM: /files
+
+volumes:
+  whatsupd-data:
