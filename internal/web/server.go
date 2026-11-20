@@ -93,6 +93,9 @@ type Options struct {
 	OAuth *oauth.Handler
 	// About is shown in Settings > About.
 	About about.Info
+	// OIDC adds "Sign in with …" to the web client. Its sessions open the web
+	// client only, never /mcp or the live API.
+	OIDC *OIDC
 }
 
 // MaxMCPBody caps one MCP request: room for a base64 file at the send_file
@@ -104,6 +107,7 @@ const cookieName = "whatsupd_session"
 type server struct {
 	opt     Options
 	session string // cookie value derived from the token
+	oidc    *oidcLogin
 
 	codesMu sync.Mutex
 	codes   map[string]time.Time
@@ -208,6 +212,9 @@ func Handler(opt Options) *Server {
 	mac.Write([]byte("whatsupd-web-session"))
 	s := &server{opt: opt, session: hex.EncodeToString(mac.Sum(nil)), codes: map[string]time.Time{}, tabs: map[string]bool{},
 		streams: map[string]int{}, goneTimers: map[string]*time.Timer{}}
+	if opt.OIDC != nil {
+		s.oidc = newOIDCLogin(*opt.OIDC, opt.Token)
+	}
 
 	mux := http.NewServeMux()
 	if opt.OAuth != nil {
@@ -239,6 +246,10 @@ func Handler(opt Options) *Server {
 	mux.Handle("POST /api/pairing/phone", s.pairing(s.apiPairPhone))
 	mux.HandleFunc("POST /api/login", s.apiLogin)
 	mux.HandleFunc("GET /login", s.loginWithCode)
+	if s.oidc != nil {
+		mux.HandleFunc("GET "+oidcFlowPath+"/login", s.oidcStart)
+		mux.HandleFunc("GET "+oidcCallback, s.oidcCallback)
+	}
 	mux.Handle("POST /api/login-code", s.bearer(http.HandlerFunc(s.apiLoginCode)))
 	// Live operations for the stdio MCP server (bearer token).
 	mux.Handle("GET /api/live/status", s.agentBearer(http.HandlerFunc(s.apiLiveStatus)))
@@ -375,8 +386,17 @@ func (s *server) requireBearer(next http.Handler, agent bool) http.Handler {
 }
 
 func (s *server) signedIn(r *http.Request) bool {
-	c, err := r.Cookie(cookieName)
-	return err == nil && equal(c.Value, s.session)
+	if c, err := r.Cookie(cookieName); err == nil && equal(c.Value, s.session) {
+		return true
+	}
+	return s.oidcSignedIn(r)
+}
+
+func (s *server) log() *slog.Logger {
+	if s.opt.Log == nil {
+		return slog.New(slog.DiscardHandler)
+	}
+	return s.opt.Log
 }
 
 func fromLoopback(r *http.Request) bool {
@@ -606,6 +626,7 @@ func (s *server) apiLogin(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) apiLogout(w http.ResponseWriter, _ *http.Request) {
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: oidcCookie, Value: "", Path: "/", MaxAge: -1})
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
@@ -626,6 +647,9 @@ func (s *server) apiSession(w http.ResponseWriter, r *http.Request) {
 	if s.signedIn(r) || (out["paired"] == false && !s.exposed()) {
 		out["pair_code"] = st.PairCode
 		out["last_error"] = st.LastError
+	}
+	if s.oidc != nil {
+		out["oidc"] = s.oidc.cfg.Name
 	}
 	if s.signedIn(r) {
 		out["account"] = st.Account

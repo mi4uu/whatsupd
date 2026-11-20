@@ -296,10 +296,18 @@ $('pair-phone-form').onsubmit = (e) => {
 function showLogin() {
   hideScreens();
   $('login').hidden = false;
-  if (new URLSearchParams(location.search).get('login') === 'expired') {
-    $('login-error').textContent = 'That sign-in link expired. Run `whatsupd open` again.';
-  }
-  $('login-token').focus();
+  const provider = S.session && S.session.oidc;
+  $('login-oidc').hidden = $('login-or').hidden = !provider;
+  if (provider) $('login-oidc').textContent = 'Sign in with ' + provider;
+  $('login-submit').classList.toggle('primary', !provider);
+  const why = {
+    expired: 'That sign-in link expired. Run `whatsupd open` again.',
+    denied: 'That account is not allowed to open this archive.',
+    'oidc-failed': 'Sign-in with ' + (provider || 'the provider') + ' failed. Try again.',
+    'oidc-host': 'Sign-in with ' + (provider || 'the provider') + ' works only on localhost or the --public-host address.',
+  }[new URLSearchParams(location.search).get('login')];
+  if (why) $('login-error').textContent = why;
+  if (!provider) $('login-token').focus();
 }
 $('login-form').onsubmit = async (e) => {
   e.preventDefault();
