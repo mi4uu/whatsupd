@@ -446,6 +446,10 @@ func cmdServe(args []string) (retErr error) {
 	if err != nil {
 		return err
 	}
+	oidcCfg, err := loadOIDC(c.dataDir)
+	if err != nil {
+		return err
+	}
 	out, err := openLog(*logFile)
 	if err != nil {
 		return err
@@ -483,7 +487,7 @@ func cmdServe(args []string) (retErr error) {
 	}
 	var mcpOpts []mcpserver.Option
 	webOpts := web.Options{Token: token, MCPToken: mcpToken, Archive: arc, Daemon: mgr, Log: log,
-		AllowAnyHost: !isLoopback(c.listen), PublicHosts: publicHosts, TrustLocal: *webAuth == "local" && !exposed}
+		AllowAnyHost: !isLoopback(c.listen), PublicHosts: publicHosts, TrustLocal: *webAuth == "local" && !exposed, OIDC: oidcCfg}
 	if *useOAuth {
 		srv, err := oauth.Open(filepath.Join(paths.Dir, "oauth.json"))
 		if err != nil {
@@ -497,7 +501,7 @@ func cmdServe(args []string) (retErr error) {
 		}
 		webOpts.OAuth = &oauth.Handler{S: srv, OwnerToken: token, Access: access}
 	}
-	webOpts.About = about.New(version, setupSummary(*asService, ob != nil, *useOAuth, len(publicHosts) > 0))
+	webOpts.About = about.New(version, setupSummary(*asService, ob != nil, *useOAuth, len(publicHosts) > 0, oidcCfg != nil))
 	if ob != nil {
 		mcpOpts = append(mcpOpts, mcpserver.WithSender(ob))
 		webOpts.AgentSend = ob
@@ -517,6 +521,10 @@ func cmdServe(args []string) (retErr error) {
 			stop()
 		}
 	}()
+	if oidcCfg != nil {
+		log.Info("web sign-in with OIDC on", "provider", oidcCfg.Name, "issuer", oidcCfg.Issuer, "allowed", len(oidcCfg.AllowedEmails),
+			"callback", "/auth/oidc/callback")
+	}
 	if exposed {
 		log.Warn("reachable beyond this machine; anyone who can reach it and has the token can read your WhatsApp", "listen", c.listen, "public_host", publicHosts)
 	}
@@ -926,8 +934,8 @@ func cmdService(args []string) error {
 
 // setupSummary describes how the daemon runs for bug reports, without
 // anything personal such as host names or allowlisted numbers.
-func setupSummary(asService, send, useOAuth, public bool) string {
-	parts := []string{"foreground", "MCP read-only", "OAuth off", "local only"}
+func setupSummary(asService, send, useOAuth, public, oidc bool) string {
+	parts := []string{"foreground", "MCP read-only", "OAuth off", "local only", "web sign-in: token"}
 	if asService {
 		parts[0] = "background service"
 	}
@@ -939,6 +947,9 @@ func setupSummary(asService, send, useOAuth, public bool) string {
 	}
 	if public {
 		parts[3] = "public host"
+	}
+	if oidc {
+		parts[4] = "web sign-in: token and OIDC"
 	}
 	return strings.Join(parts, ", ")
 }

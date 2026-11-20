@@ -40,9 +40,11 @@
 <div id="login" class="screen center" hidden>
   <form id="login-form" class="card login-card">
     <h1>Sign in</h1>
+    <a id="login-oidc" class="btn primary" href="/auth/oidc/login" hidden></a>
+    <p id="login-or" class="muted small or" hidden>or use the access token</p>
     <p class="muted">Run <code>whatsupd open</code> in a terminal, or paste the access token printed by <code>whatsupd token</code>.</p>
     <input id="login-token" type="password" placeholder="Access token" autocomplete="current-password">
-    <button class="btn primary">Sign in</button>
+    <button id="login-submit" class="btn primary">Sign in</button>
     <p id="login-error" class="error small"></p>
   </form>
 </div>

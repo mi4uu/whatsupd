@@ -212,12 +212,19 @@ func TestSessionFlow(t *testing.T) {
 
 // TestDemoServer serves the web client with demo data for manual previews:
 // WHATSUPD_DEMO_ADDR=127.0.0.1:8799 go test ./internal/web -run TestDemoServer -timeout 0
+// WHATSUPD_DEMO_OIDC=you@example.com adds "Sign in with Google" against a fake
+// provider that signs in that address (any other is denied).
 func TestDemoServer(t *testing.T) {
 	addr := os.Getenv("WHATSUPD_DEMO_ADDR")
 	if addr == "" {
 		t.Skip("set WHATSUPD_DEMO_ADDR to run the demo server")
 	}
 	srv, _ := setup(t)
+	if email := os.Getenv("WHATSUPD_DEMO_OIDC"); email != "" {
+		f := newFakeIssuer(t)
+		f.email = email
+		srv = oidcServer(t, f, "owner@example.com")
+	}
 	srv.s.opt.About = about.New("dev", "demo data")
 	t.Logf("demo at http://%s/login?code=%s (token %s)", addr, srv.NewLoginCode(), testToken)
 	if err := http.ListenAndServe(addr, srv); err != nil {

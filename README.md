@@ -74,6 +74,7 @@ Where others are ahead, today:
 - [Install](#install)
 - [Upgrading from wamcp](#upgrading-from-wamcp)
 - [Run it in the background](#run-it-in-the-background)
+- [Sign in with Google (OIDC)](#sign-in-with-google-oidc)
 - [Connect an AI assistant](#connect-an-ai-assistant)
 - [MCP tools](#mcp-tools)
 - [Letting agents send (opt-in)](#letting-agents-send-opt-in)
@@ -140,6 +141,44 @@ whatsupd service uninstall   # the archive is kept
 Logs: `~/.whatsupd/logs/whatsupd.log`.
 
 On Linux the unit goes to `~/.config/systemd/user/whatsupd.service`. systemd stops user services when you log out, so on a server you reach over SSH run `loginctl enable-linger` once; `whatsupd service install` tells you when it is needed. Without systemd (some containers, WSL), run `whatsupd serve` under your own supervisor.
+
+## Sign in with Google (OIDC)
+
+By default the web client signs in with the access token (`whatsupd open`, or paste `whatsupd token`). You can add a "Sign in with Google" button, or any other OpenID Connect provider (Keycloak, Authentik, Microsoft and others). The token keeps working next to it.
+
+![Sign-in page with the Google button](docs/img/web-client-sign-in.png)
+
+1. Create an OAuth client at the provider. For Google: Google Cloud Console, APIs & Services, Credentials, "OAuth client ID", type "Web application". Add the redirect URI `https://<your public host>/auth/oidc/callback` (the `--public-host` name, with its port if it has one), or `http://localhost:8765/auth/oidc/callback` for a daemon you open only on this machine.
+2. Write `~/.whatsupd/oidc.env` and make it private with `chmod 600 ~/.whatsupd/oidc.env` (whatsupd refuses to start if other users can read it):
+
+   ```sh
+   WHATSUPD_OIDC_ISSUER=https://accounts.google.com
+   WHATSUPD_OIDC_CLIENT_ID=1234-abc.apps.googleusercontent.com
+   WHATSUPD_OIDC_CLIENT_SECRET=...
+   WHATSUPD_OIDC_NAME=Google
+   WHATSUPD_OIDC_ALLOWED_EMAILS=you@gmail.com
+   ```
+
+3. Restart the daemon (`whatsupd service restart`). The sign-in page shows "Sign in with Google".
+
+| Variable | Required | |
+|---|---|---|
+| `WHATSUPD_OIDC_ISSUER` | yes | The provider, e.g. `https://accounts.google.com` or `https://keycloak.example.com/realms/home`. |
+| `WHATSUPD_OIDC_CLIENT_ID`, `WHATSUPD_OIDC_CLIENT_SECRET` | yes | From the provider's console. |
+| `WHATSUPD_OIDC_ALLOWED_EMAILS` | yes | Comma-separated addresses that may sign in. |
+| `WHATSUPD_OIDC_NAME` | no | Button label. Default `SSO`. |
+| `WHATSUPD_OIDC_SCOPES` | no | Default `openid email profile`. |
+
+The same variables in the environment of `whatsupd serve` override the file. The file exists so the background service gets the client secret without it ending up in the unit file or on the command line.
+
+How it is checked:
+
+- The allowlist is required. Without it whatsupd does not start, because every account at the provider (every Google account in the world) could read your WhatsApp.
+- The login uses PKCE, a `state` bound to the browser by a short-lived cookie (one use, 10 minutes) and a `nonce`. The ID token's signature, issuer, audience and expiry are verified, the e-mail must be marked verified by the provider and must match an allowlisted address exactly (case does not matter).
+- The session lasts 30 days. The allowlist is checked on every request: remove an address and restart the daemon, and that browser is signed out.
+- An OIDC session opens the web client only. `/mcp`, the API stdio servers use, OAuth client management and login codes still need a bearer token, as before.
+- The button works on `localhost` and on the `--public-host` names. Opened under any other address it refuses, so the provider is never sent a redirect address picked by whoever made the request.
+- The provider is contacted at the first sign-in, not at startup, so a network that is not up yet does not stop the daemon.
 
 ## Connect an AI assistant
 
@@ -259,8 +298,9 @@ Everything lives in `~/.whatsupd` (mode `0700`):
 | `token` | Main access token: web client sign-in, MCP |
 | `mcp-token` | MCP-only token: `/mcp` and the API stdio servers use, no web client |
 | `oauth.json` | OAuth clients you approved and hashes of their tokens (`--oauth`) |
+| `oidc.env` | Optional "Sign in with Google" settings and client secret (mode `0600`) |
 
-- The server listens on `127.0.0.1` unless you pass `--listen`. `/mcp` always requires `Authorization: Bearer <token>` (the MCP token or the main one), there is no way to turn that off. The web client needs a session cookie obtained with the token (`whatsupd open`). Requests with a foreign `Host` header (DNS rebinding) and cross-site form posts are rejected.
+- The server listens on `127.0.0.1` unless you pass `--listen`. `/mcp` always requires `Authorization: Bearer <token>` (the MCP token or the main one), there is no way to turn that off. The web client needs a session cookie obtained with the token (`whatsupd open`) or, if you set it up, with an allowlisted OIDC account. Requests with a foreign `Host` header (DNS rebinding) and cross-site form posts are rejected.
 - Behind a reverse proxy or tunnel (cloudflared, nginx, Caddy) use `--public-host` or `--web-auth token`. Without them, requests that carry proxy headers (`X-Forwarded-For`, `Forwarded`, `Cf-Connecting-Ip` and similar) or come from a known proxy process (cloudflared, ngrok, ssh, nginx, Caddy and others) are never signed in automatically, but a proxy that is neither would look like a local browser.
 - When whatsupd is reachable from other machines (`--public-host` or a non-loopback `--listen`), linking a phone needs a signed-in browser, so a visitor cannot link their own account to your daemon.
 - Messages deleted for everyone keep their content in the archive and are marked with who deleted them and when. They stay searchable. Run `whatsupd serve --deleted remove` to wipe them instead, like WhatsApp does.
