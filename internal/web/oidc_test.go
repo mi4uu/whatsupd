@@ -27,9 +27,10 @@ type fakeIssuer struct {
 	key *rsa.PrivateKey
 
 	mu        sync.Mutex
-	challenge string         // from the last authorize URL
-	claims    map[string]any // ID token claims for the next exchange
-	email     string         // signed in by /authorize, for the demo server
+	challenge string          // from the last authorize URL
+	claims    map[string]any  // ID token claims for the next exchange
+	email     string          // signed in by /authorize, for the demo server
+	used      map[string]bool // codes already exchanged: each works once, as at a real provider
 }
 
 func newFakeIssuer(t *testing.T) *fakeIssuer {
@@ -38,7 +39,7 @@ func newFakeIssuer(t *testing.T) *fakeIssuer {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := &fakeIssuer{key: key}
+	f := &fakeIssuer{key: key, used: map[string]bool{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, map[string]any{
@@ -61,7 +62,7 @@ func newFakeIssuer(t *testing.T) *fakeIssuer {
 		f.challenge = q.Get("code_challenge")
 		f.claims = f.claimsFor(q.Get("nonce"), f.email, true)
 		f.mu.Unlock()
-		http.Redirect(w, r, q.Get("redirect_uri")+"?code=good-code&state="+url.QueryEscape(q.Get("state")), http.StatusFound)
+		http.Redirect(w, r, q.Get("redirect_uri")+"?code=good-"+randomString()+"&state="+url.QueryEscape(q.Get("state")), http.StatusFound)
 	})
 	mux.HandleFunc("POST /token", func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
@@ -70,10 +71,12 @@ func newFakeIssuer(t *testing.T) *fakeIssuer {
 			id, secret = r.PostForm.Get("client_id"), r.PostForm.Get("client_secret")
 		}
 		sum := sha256.Sum256([]byte(r.PostForm.Get("code_verifier")))
+		code := r.PostForm.Get("code")
 		f.mu.Lock()
-		claims, challenge := f.claims, f.challenge
+		claims, challenge, reused := f.claims, f.challenge, f.used[code]
+		f.used[code] = true
 		f.mu.Unlock()
-		if id != "cid" || secret != "csecret" || r.PostForm.Get("code") != "good-code" ||
+		if id != "cid" || secret != "csecret" || !strings.HasPrefix(code, "good-") || reused ||
 			base64.RawURLEncoding.EncodeToString(sum[:]) != challenge {
 			w.WriteHeader(http.StatusBadRequest)
 			writeJSON(w, map[string]string{"error": "invalid_grant"})
@@ -85,6 +88,8 @@ func newFakeIssuer(t *testing.T) *fakeIssuer {
 	t.Cleanup(f.Close)
 	return f
 }
+
+func freshCode() string { return "good-" + randomString() }
 
 func (f *fakeIssuer) sign(t *testing.T, claims map[string]any) string {
 	t.Helper()
@@ -187,7 +192,7 @@ func login(t *testing.T, srv http.Handler, f *fakeIssuer, email string, verified
 	f.mu.Lock()
 	f.claims = f.claimsFor(st.nonce, email, verified)
 	f.mu.Unlock()
-	return callback(t, srv, "code=good-code&state="+url.QueryEscape(st.state), st.flow)
+	return callback(t, srv, "code="+freshCode()+"&state="+url.QueryEscape(st.state), st.flow)
 }
 
 func TestOIDCAllowedAccountSignsIn(t *testing.T) {
@@ -216,7 +221,7 @@ func TestOIDCAllowedAccountSignsIn(t *testing.T) {
 
 func TestOIDCDeniesUnlistedOrUnverified(t *testing.T) {
 	f := newFakeIssuer(t)
-	srv := oidcServer(t, f, "owner@example.com")
+	srv := oidcServer(t, f, "owner@example.com", "kim@example.com", "info@example.com")
 	for name, tc := range map[string]struct {
 		email    string
 		verified any
@@ -227,6 +232,8 @@ func TestOIDCDeniesUnlistedOrUnverified(t *testing.T) {
 		"verified as text":  {"owner@example.com", "false"},
 		"no e-mail":         {"", true},
 		"lookalike address": {"owner@example.com.evil", true},
+		"Unicode case fold": {"\u212Aim@example.com", true}, // Kelvin sign lowercases to k
+		"dotted capital I":  {"\u0130nfo@example.com", true},
 	} {
 		loc, c := login(t, srv, f, tc.email, tc.verified)
 		if loc != "/?login=denied" || c != nil {
@@ -247,13 +254,13 @@ func TestOIDCRejectsBadFlow(t *testing.T) {
 
 	st = startOIDC(t, srv, f)
 	f.claims = f.claimsFor(st.nonce, "owner@example.com", true)
-	if loc, c := callback(t, srv, "code=good-code&state="+url.QueryEscape(st.state), nil); loc != "/?login=oidc-failed" || c != nil {
+	if loc, c := callback(t, srv, "code="+freshCode()+"&state="+url.QueryEscape(st.state), nil); loc != "/?login=oidc-failed" || c != nil {
 		t.Errorf("no flow cookie (login started in another browser): %q %v", loc, c)
 	}
 
 	st = startOIDC(t, srv, f)
 	f.claims = f.claimsFor("not-the-nonce", "owner@example.com", true)
-	if loc, c := callback(t, srv, "code=good-code&state="+url.QueryEscape(st.state), st.flow); loc != "/?login=oidc-failed" || c != nil {
+	if loc, c := callback(t, srv, "code="+freshCode()+"&state="+url.QueryEscape(st.state), st.flow); loc != "/?login=oidc-failed" || c != nil {
 		t.Errorf("nonce mismatch: %q %v", loc, c)
 	}
 
@@ -261,7 +268,7 @@ func TestOIDCRejectsBadFlow(t *testing.T) {
 	claims := f.claimsFor(st.nonce, "owner@example.com", true)
 	claims["aud"] = "another-client"
 	f.claims = claims
-	if loc, c := callback(t, srv, "code=good-code&state="+url.QueryEscape(st.state), st.flow); loc != "/?login=oidc-failed" || c != nil {
+	if loc, c := callback(t, srv, "code="+freshCode()+"&state="+url.QueryEscape(st.state), st.flow); loc != "/?login=oidc-failed" || c != nil {
 		t.Errorf("token for another client: %q %v", loc, c)
 	}
 
@@ -269,13 +276,13 @@ func TestOIDCRejectsBadFlow(t *testing.T) {
 	claims = f.claimsFor(st.nonce, "owner@example.com", true)
 	claims["exp"] = time.Now().Add(-time.Minute).Unix()
 	f.claims = claims
-	if loc, c := callback(t, srv, "code=good-code&state="+url.QueryEscape(st.state), st.flow); loc != "/?login=oidc-failed" || c != nil {
+	if loc, c := callback(t, srv, "code="+freshCode()+"&state="+url.QueryEscape(st.state), st.flow); loc != "/?login=oidc-failed" || c != nil {
 		t.Errorf("expired ID token: %q %v", loc, c)
 	}
 
 	st = startOIDC(t, srv, f)
 	f.claims = f.claimsFor(st.nonce, "owner@example.com", true)
-	q := "code=good-code&state=" + url.QueryEscape(st.state)
+	q := "code=" + freshCode() + "&state=" + url.QueryEscape(st.state)
 	if loc, c := callback(t, srv, q, st.flow); loc != "/" || c == nil {
 		t.Fatalf("valid login: %q %v", loc, c)
 	}
@@ -339,6 +346,9 @@ func TestOIDCSessionRevokedWithAllowlist(t *testing.T) {
 	if code := withCookie(srv, "GET", "/api/chats", forged, nil); code != http.StatusUnauthorized {
 		t.Errorf("expired session: got %d", code)
 	}
+	if code := withCookie(srv, "GET", "/api/chats", &http.Cookie{Name: oidcCookie, Value: startOIDC(t, srv, f).flow.Value}, nil); code != http.StatusUnauthorized {
+		t.Errorf("flow cookie used as a session: got %d", code)
+	}
 	otherKey := Handler(Options{Token: "another-token", Archive: srv.s.opt.Archive, Daemon: srv.s.opt.Daemon,
 		OIDC: &OIDC{Issuer: f.URL, ClientID: "cid", AllowedEmails: []string{"wife@example.com"}}})
 	if code := withCookie(otherKey, "GET", "/api/chats", c, nil); code != http.StatusUnauthorized {
@@ -401,6 +411,7 @@ func TestOIDCValidate(t *testing.T) {
 		"no allowlist": {Issuer: "https://accounts.google.com", ClientID: "cid"},
 		"no client":    {Issuer: "https://accounts.google.com", AllowedEmails: []string{"a@b.c"}},
 		"no issuer":    {ClientID: "cid", AllowedEmails: []string{"a@b.c"}},
+		"non-ASCII":    {Issuer: "https://accounts.google.com", ClientID: "cid", AllowedEmails: []string{"ząb@example.com"}},
 	} {
 		if cfg.Validate() == nil {
 			t.Errorf("%s: accepted", name)

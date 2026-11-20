@@ -174,8 +174,9 @@ The same variables in the environment of `whatsupd serve` override the file. The
 How it is checked:
 
 - The allowlist is required. Without it whatsupd does not start, because every account at the provider (every Google account in the world) could read your WhatsApp.
-- The login uses PKCE, a `state` bound to the browser by a short-lived cookie (one use, 10 minutes) and a `nonce`. The ID token's signature, issuer, audience and expiry are verified, the e-mail must be marked verified by the provider and must match an allowlisted address exactly (case does not matter).
-- The session lasts 30 days. The allowlist is checked on every request: remove an address and restart the daemon, and that browser is signed out.
+- The login uses PKCE, a `state` bound to the browser by a signed cookie (10 minutes, cleared on return) and a `nonce`. The ID token's signature, issuer, audience and expiry are verified, the e-mail must be marked verified by the provider and must match an allowlisted address exactly. Only ASCII case is ignored: addresses with other characters are refused, because Unicode case folding turns some lookalikes (the Kelvin sign `K`) into plain letters.
+- The session lasts 30 days and lives only in the browser's cookie, so "Log out" ends it in that browser only. The allowlist is checked on every request: remove an address and restart the daemon, and every browser signed in with it is out.
+- The account is identified by its e-mail address. If the provider ever gives that address to someone else, they get in too; with Google and your own Gmail that does not happen.
 - An OIDC session opens the web client only. `/mcp`, the API stdio servers use, OAuth client management and login codes still need a bearer token, as before.
 - The button works on `localhost` and on the `--public-host` names. Opened under any other address it refuses, so the provider is never sent a redirect address picked by whoever made the request.
 - The provider is contacted at the first sign-in, not at startup, so a network that is not up yet does not stop the daemon.
