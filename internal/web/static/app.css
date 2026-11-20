@@ -232,7 +232,7 @@ audio { max-width: 280px; display: block; margin: 2px 0 4px; }
 .doc-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 280px; }
 .media-missing { color: var(--muted); font-size: 13px; padding: 10px; background: var(--quote); border-radius: 6px; margin-bottom: 4px; cursor: pointer; }
 .poll-opt { border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; margin: 3px 0; }
-.reactions { display: flex; gap: 2px; margin: -6px 10px 2px; position: relative; z-index: 1; }
+.reactions { display: flex; flex-wrap: wrap; gap: 2px; max-width: 100%; margin: -6px 10px 2px; position: relative; z-index: 1; }
 .reaction-pill { background: var(--panel); border-radius: 12px; padding: 1px 6px; font-size: 13px; box-shadow: var(--shadow); cursor: default; }
 .msg-actions {
   position: absolute; top: 2px; right: 4px; opacity: 0; border: 0; border-radius: 50%; width: 24px; height: 24px;

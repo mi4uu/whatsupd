@@ -715,10 +715,11 @@ function renderMessages(mode, focusId) {
   const frag = document.createDocumentFragment();
   // One group per day: a sticky date chip stays stuck only within its own
   // day, so the next day's chip replaces it instead of drawing over it.
-  let group = null;
+  let group = null, groupTs = 0;
   for (const m of S.messages) {
-    if (!prev || !sameDay(new Date(prev.ts * 1000), new Date(m.ts * 1000))) {
+    if (!group || !sameDay(new Date(groupTs * 1000), new Date(m.ts * 1000))) {
       group = h('div', { class: 'day-group' }, h('div', { class: 'day' }, dayLabel(m.ts)));
+      groupTs = m.ts;
       frag.append(group);
       prev = null;
     }
