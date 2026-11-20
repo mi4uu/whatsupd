@@ -713,18 +713,22 @@ function renderMessages(mode, focusId) {
   const isGroup = S.active.endsWith('@g.us');
   let prev = null;
   const frag = document.createDocumentFragment();
+  // One group per day: a sticky date chip stays stuck only within its own
+  // day, so the next day's chip replaces it instead of drawing over it.
+  let group = null;
   for (const m of S.messages) {
     if (!prev || !sameDay(new Date(prev.ts * 1000), new Date(m.ts * 1000))) {
-      frag.append(h('div', { class: 'day' }, dayLabel(m.ts)));
+      group = h('div', { class: 'day-group' }, h('div', { class: 'day' }, dayLabel(m.ts)));
+      frag.append(group);
       prev = null;
     }
     if (m.kind === 'system') {
-      frag.append(h('div', { class: 'system', id: 'm-' + m.id }, m.text));
+      group.append(h('div', { class: 'system', id: 'm-' + m.id }, m.text));
       prev = null;
       continue;
     }
-    const first = !prev || prev.sender !== m.sender || prev.kind === 'system' || m.ts - prev.ts > 600;
-    frag.append(messageEl(m, first, isGroup));
+    const first = !prev || prev.sender !== m.sender || prev.kind === 'system';
+    group.append(messageEl(m, first, isGroup));
     prev = m;
   }
   box.append(frag);
@@ -760,6 +764,7 @@ function messageEl(m, first, isGroup) {
     if (media) bubble.append(media);
     const text = mediaText(m);
     if (text) bubble.append(h('span', { class: 'text' }, richText(text)));
+    else if (m.kind === 'image' && m.has_media && !m.versions?.length) bubble.classList.add('media-only');
     if (m.versions && m.versions.length) {
       bubble.append(h('details', { class: 'versions' },
         h('summary', {}, `✎ ${m.versions.length} earlier version${m.versions.length > 1 ? 's' : ''}`),
@@ -801,6 +806,7 @@ function mediaEl(m) {
   }
   const url = mediaURL(m);
   const failed = (el, label) => {
+    el.closest('.bubble')?.classList.remove('media-only');
     el.replaceWith(h('div', { class: 'media-missing', title: 'Retry', onclick: () => scheduleActive() },
       `${label} · not available (${m.media_error || 'media expired; ask the phone by opening this chat on it'})`));
   };
