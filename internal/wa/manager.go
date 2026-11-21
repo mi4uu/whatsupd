@@ -687,6 +687,7 @@ func (m *Manager) onConnected(ctx context.Context) {
 	m.jobs.add("groups", m.refreshGroups)
 	m.jobs.add("contacts", m.refreshContacts)
 	m.jobs.add("reconcile", m.reconcile)
+	m.jobs.add("appstate", m.syncAppState)
 }
 
 // beginSession starts catch-up tracking for a new connection. WhatsApp may

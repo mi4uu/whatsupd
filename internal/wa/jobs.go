@@ -2,10 +2,13 @@ package wa
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
 
+	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/appstate"
 	waBinary "go.mau.fi/whatsmeow/binary"
 )
 
@@ -100,6 +103,7 @@ func (m *Manager) heartbeat(ctx context.Context) {
 		case <-refresh.C:
 			m.jobs.add("groups", m.refreshGroups)
 			m.jobs.add("contacts", m.refreshContacts)
+			m.jobs.add("appstate", m.syncAppState)
 		}
 	}
 }
@@ -131,6 +135,35 @@ func (m *Manager) refreshContacts(ctx context.Context) error {
 		return err
 	}
 	return m.ing.Contacts(ctx, all)
+}
+
+// syncAppState pulls chat state (archived, pinned, muted, read, contacts) that the phone changed.
+// whatsmeow only logs an LTHash mismatch and then stays stuck on that patch forever, so every later
+// change from the phone is lost; a full sync from the server snapshot is the way out.
+func (m *Manager) syncAppState(ctx context.Context) error {
+	cli := m.Client()
+	if cli == nil || cli.Store.ID == nil {
+		return nil
+	}
+	var first error
+	for _, name := range appstate.AllPatchNames {
+		err := cli.FetchAppState(ctx, name, false, false)
+		if errors.Is(err, appstate.ErrMismatchingLTHash) {
+			m.log.Warn("app state is out of step with the server, syncing it from scratch", "name", name)
+			err = cli.FetchAppState(ctx, name, true, false)
+		}
+		if errors.Is(err, appstate.ErrMismatchingLTHash) {
+			// The server's own snapshot does not verify either. The phone holds the truth: ask it
+			// for a recovery snapshot; whatsmeow applies the answer when the phone is next online.
+			m.log.Warn("server snapshot of app state does not verify, asking the phone for a recovery copy", "name", name)
+			_, err = cli.SendPeerMessage(ctx, whatsmeow.BuildAppStateRecoveryRequest(name))
+		}
+		if err != nil && first == nil {
+			first = err
+		}
+	}
+	m.bus.Publish(Event{Type: "sync"})
+	return first
 }
 
 func (m *Manager) reconcile(ctx context.Context) error {
